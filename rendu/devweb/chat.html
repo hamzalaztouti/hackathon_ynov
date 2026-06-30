@@ -5,25 +5,47 @@
 <title>TechCorp Financial Assistant</title>
 <style>
   body { font-family: system-ui, sans-serif; max-width: 800px; margin: 30px auto; background:#0f1115; color:#e6e6e6; }
-  h1 { font-size: 1.3rem; display:flex; align-items:center; gap:10px; }
+  h1 { font-size: 1.3rem; display:flex; align-items:center; gap:10px; justify-content: space-between; }
+  .title-group { display:flex; align-items:center; gap:10px; }
   #status { font-size: 0.85rem; padding: 4px 10px; border-radius: 12px; }
   .ok { background:#1f7a3f; color:#fff; }
   .ko { background:#7a1f1f; color:#fff; }
+  #clearBtn { font-size: 0.8rem; padding: 6px 12px; border-radius: 6px; border:1px solid #2a2d36; background:#1a1d24; color:#bbb; cursor:pointer; }
+  #clearBtn:hover { background:#262a33; color:#fff; }
   #chat { border:1px solid #2a2d36; border-radius:8px; height:480px; overflow-y:auto; padding:14px; background:#15171c; margin-bottom:12px; }
-  .msg { margin:10px 0; line-height:1.4; white-space:pre-wrap; }
+  .msg { margin:10px 0; line-height:1.5; }
   .user { text-align:right; }
-  .user span { background:#2563eb; padding:8px 12px; border-radius:10px; display:inline-block; max-width:80%; }
+  .user span { background:#2563eb; padding:8px 12px; border-radius:10px; display:inline-block; max-width:80%; white-space:pre-wrap; }
   .bot span { background:#262a33; padding:8px 12px; border-radius:10px; display:inline-block; max-width:80%; }
+  .bot span p { margin: 0 0 8px 0; }
+  .bot span p:last-child { margin-bottom: 0; }
+  .bot span ul, .bot span ol { margin: 4px 0; padding-left: 20px; }
+  .bot span strong { color: #fff; }
+  .bot span code { background:#1a1d24; padding:1px 5px; border-radius:4px; font-size:0.9em; }
+  .typing { display:inline-flex; gap:4px; align-items:center; }
+  .dot { width:6px; height:6px; border-radius:50%; background:#888; animation: blink 1.4s infinite both; }
+  .dot:nth-child(2) { animation-delay: 0.2s; }
+  .dot:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: 0.3; } 40% { opacity: 1; } }
   form { display:flex; gap:8px; }
   input { flex:1; padding:10px; border-radius:6px; border:1px solid #2a2d36; background:#15171c; color:#fff; }
   button { padding:10px 18px; border-radius:6px; border:none; background:#2563eb; color:#fff; cursor:pointer; }
   button:disabled { opacity:0.5; cursor:not-allowed; }
+  .error-box { background:#3a1f1f; border:1px solid #7a1f1f; padding:10px 14px; border-radius:8px; font-size:0.9rem; }
+  .error-box .hint { color:#bbb; font-size:0.8rem; margin-top:4px; }
 </style>
 </head>
 <body>
 
-<h1>TechCorp Financial Assistant <span id="status" class="ko">déconnecté</span></h1>
+<h1>
+  <span class="title-group">
+    TechCorp Financial Assistant <span id="status" class="ko">déconnecté</span>
+  </span>
+  <button id="clearBtn" type="button">Effacer la conversation</button>
+</h1>
+
 <div id="chat"></div>
+
 <form id="form">
   <input id="input" placeholder="Posez votre question financière..." autocomplete="off" />
   <button id="send" type="submit">Envoyer</button>
@@ -38,16 +60,56 @@ const formEl = document.getElementById("form");
 const inputEl = document.getElementById("input");
 const statusEl = document.getElementById("status");
 const sendBtn = document.getElementById("send");
+const clearBtn = document.getElementById("clearBtn");
+
 let history = [];
+
+// Rendu Markdown minimal : gras, listes, code inline
+function renderMarkdown(text) {
+  let html = text
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+
+  const lines = html.split("\n");
+  let out = [];
+  let inList = false;
+  for (const line of lines) {
+    const m = line.match(/^\s*(?:[-*]|\d+\.)\s+(.*)/);
+    if (m) {
+      if (!inList) { out.push("<ul>"); inList = true; }
+      out.push(`<li>${m[1]}</li>`);
+    } else {
+      if (inList) { out.push("</ul>"); inList = false; }
+      if (line.trim()) out.push(`<p>${line}</p>`);
+    }
+  }
+  if (inList) out.push("</ul>");
+  return out.join("");
+}
 
 function addMessage(role, text) {
   const div = document.createElement("div");
   div.className = "msg " + (role === "user" ? "user" : "bot");
-  div.innerHTML = `<span></span>`;
-  div.querySelector("span").textContent = text;
+  const span = document.createElement("span");
+  div.appendChild(span);
   chatEl.appendChild(div);
   chatEl.scrollTop = chatEl.scrollHeight;
-  return div.querySelector("span");
+  return span;
+}
+
+function showTyping() {
+  const span = addMessage("bot", "");
+  span.innerHTML = `<span class="typing"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>`;
+  return span;
+}
+
+function showError(message, hint) {
+  const div = document.createElement("div");
+  div.className = "msg bot";
+  div.innerHTML = `<div class="error-box">⚠️ ${message}<div class="hint">${hint}</div></div>`;
+  chatEl.appendChild(div);
+  chatEl.scrollTop = chatEl.scrollHeight;
 }
 
 async function checkConnection() {
@@ -64,28 +126,40 @@ async function checkConnection() {
   return false;
 }
 
+clearBtn.addEventListener("click", () => {
+  history = [];
+  chatEl.innerHTML = "";
+});
+
 formEl.addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = inputEl.value.trim();
   if (!text) return;
+
   inputEl.value = "";
   sendBtn.disabled = true;
-  addMessage("user", text);
+  addMessage("user", text).textContent = text;
   history.push({ role: "user", content: text });
-  const botSpan = addMessage("bot", "...");
+
+  const botSpan = showTyping();
 
   try {
     const res = await fetch(`${OLLAMA_URL}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: MODEL_NAME, messages: history, stream: true })
+      body: JSON.stringify({
+        model: MODEL_NAME,
+        messages: history,
+        stream: true
+      })
     });
-    if (!res.ok || !res.body) throw new Error("Erreur serveur");
+
+    if (!res.ok || !res.body) throw new Error("server");
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let fullText = "";
-    botSpan.textContent = "";
+    let firstChunk = true;
 
     while (true) {
       const { value, done } = await reader.read();
@@ -95,18 +169,23 @@ formEl.addEventListener("submit", async (e) => {
         try {
           const json = JSON.parse(line);
           if (json.message?.content) {
+            if (firstChunk) { botSpan.innerHTML = ""; firstChunk = false; }
             fullText += json.message.content;
-            botSpan.textContent = fullText;
+            botSpan.innerHTML = renderMarkdown(fullText);
             chatEl.scrollTop = chatEl.scrollHeight;
           }
-        } catch (_) {}
+        } catch (_) { /* ligne partielle, on ignore */ }
       }
     }
     history.push({ role: "assistant", content: fullText });
     statusEl.textContent = "connecté";
     statusEl.className = "ok";
   } catch (err) {
-    botSpan.textContent = "⚠️ Impossible de contacter le serveur Ollama (" + err.message + ")";
+    botSpan.closest(".msg").remove();
+    showError(
+      "Impossible de contacter le serveur Ollama",
+      "Vérifiez qu'Ollama tourne bien sur localhost:11434 (commande : ollama serve), et que le modèle 'techcorp-financial' est créé."
+    );
     statusEl.textContent = "déconnecté";
     statusEl.className = "ko";
   } finally {
@@ -118,5 +197,6 @@ formEl.addEventListener("submit", async (e) => {
 checkConnection();
 setInterval(checkConnection, 5000);
 </script>
+
 </body>
 </html>
