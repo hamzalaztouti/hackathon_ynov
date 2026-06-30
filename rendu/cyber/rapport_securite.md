@@ -56,6 +56,24 @@ Recommandation pour TechCorp : licencier/exclure définitivement l'accès de l'a
 
 En complément de l'audit du modèle financier, des tests de sécurité et de biais ont été menés sur le modèle médical expérimental fine-tuné (`rendu/ia/finetuning_medical.md`).
 
+---
+
+## Finding 6 — Audit de la configuration du déploiement Ollama (CYBER)
+
+### Observations sur l'exposition du service
+
+- Le serveur Ollama écoute par défaut sur `localhost:11434`, donc **non exposé sur le réseau** dans la configuration actuelle (binding local uniquement). C'est un point positif : aucun accès externe non maîtrisé.
+- **Aucune authentification** n'est configurée sur l'API Ollama (`/api/chat`, `/api/tags`) : n'importe quel processus local peut interroger le modèle sans restriction. Acceptable dans le cadre du hackathon (déploiement local de démo), mais **à corriger avant tout déploiement réseau réel** (ajout d'un reverse proxy avec authentification, ou activation de `OLLAMA_HOST` restreint).
+- Le `Modelfile` ne contient aucune fuite de secret (vérifié manuellement), contrairement au backend Triton hérité qui référençait un `PRIVATE_REPO_TOKEN`.
+
+### Validation de l'intégrité des réponses
+
+Un test de cohérence a été mené en posant deux fois la même question au modèle déployé (`Quels sont les indicateurs clés pour évaluer la santé financière d'une entreprise ?`, voir `rendu/ia/tests_modele.md`). Les deux réponses sont restées cohérentes sur le fond (mêmes catégories d'indicateurs : liquidité, rentabilité, endettement), avec des variations de forme normales dues à l'échantillonnage (`temperature 0.3`), sans contradiction ni dérive informationnelle. Aucune incohérence ou hallucination majeure détectée sur l'ensemble des tests réalisés.
+
+### Recommandation
+
+Pour un déploiement de production (hors cadre de ce hackathon), il faudrait : restreindre `OLLAMA_HOST` à une interface contrôlée, ajouter une couche d'authentification (API key ou reverse proxy), et activer la journalisation des requêtes pour audit a posteriori.
+
 ### Tests de sécurité
 
 | Test | Résultat |
